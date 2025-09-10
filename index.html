@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>見通しボード｜複数人・やること順番リスト</title>
+<style>
+  :root{
+    --bg:#ffffff; --fg:#111; --muted:#eef1f5; --acc:#1e90ff; --danger:#ff5d5d; --line:#e5e7eb;
+    --radius:14px; --shadow:0 8px 24px rgba(0,0,0,.08);
+    --bar-h:56px; --tile-min: 280px;
+  }
+  *{ box-sizing:border-box }
+  html,body{ height:100% }
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family: system-ui,-apple-system,"BIZ UDPGothic","Noto Sans JP","Yu Gothic UI","Hiragino Kaku Gothic ProN",Meiryo,sans-serif;
+    line-height:1.6;
+  }
+  header{
+    position:sticky; top:0; z-index:10;
+    background:#fff8; backdrop-filter: blur(6px);
+    border-bottom:1px solid var(--line);
+  }
+  .wrap{ max-width:1200px; margin:0 auto; padding:16px; }
+  h1{
+    margin:0 0 6px; font-size: clamp(1.2rem, 3.5vw, 1.8rem);
+    display:flex; gap:8px; align-items:center;
+  }
+  h1 span[contenteditable]{ outline:none; padding:2px 6px; border-radius:8px; }
+  h1 span[contenteditable]:focus{ background:#fff3 }
+  .bar{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  button{ font-size:1rem; padding:10px 14px; border:0; cursor:pointer; border-radius:12px; background:var(--acc); color:#fff; }
+  button.secondary{ background:#eef2f7; color:#111 }
+  button.danger{ background:var(--danger) }
+  button.ghost{ background:transparent; color:#111; border:1px solid #dbe1e8 }
+  .hint{ font-size:.9rem; color:#555 }
+
+  main.wrap{ padding:12px 16px 80px }
+  .grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(var(--tile-min),1fr)); gap:12px; }
+
+  /* ---- 子タイル ---- */
+  .kid{ background:#fff; border:2px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); display:grid; gap:10px; padding:12px; }
+  .kidHead{ display:flex; align-items:center; gap:8px; }
+  .kidName[contenteditable]{ font-weight:800; font-size: clamp(1.1rem, 3.8vw, 1.4rem); outline:none; border-radius:8px; padding:2px 6px; }
+  .kidName[contenteditable]:focus{ background:#f2f7ff }
+
+  ol.steps{ list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:10px; }
+  .item{ display:grid; grid-template-columns: auto 1fr auto; align-items:center; gap:10px; padding:10px; border:2px solid #e5e9f0; border-radius:12px; background:#fff; }
+  .num{ width:40px; height:40px; border-radius:10px; display:grid; place-items:center; background:var(--muted); font-weight:700; font-size:1.05rem; cursor:grab; user-select:none; }
+  .num:active{ cursor:grabbing; }
+  .item.dragging{ opacity:.6; }
+  .txt[contenteditable]{ padding:6px 8px; border-radius:10px; outline:none; min-height:36px; font-size: clamp(1.02rem, 3.6vw, 1.2rem); word-break: break-word; }
+  .txt[contenteditable]:focus{ box-shadow: inset 0 0 0 3px #eaf2ff }
+  .ctrls{ display:flex; gap:6px }
+  .ctrls button{ padding:6px 10px; font-size:.95rem }
+  .done{ appearance:none; width:26px; height:26px; border-radius:8px; border:2px solid #aeb8c4; display:grid; place-items:center; }
+  .done:checked{ background:#1ddb7a; border-color:#1ddb7a }
+
+  /* ＋ボタン（欄の一番下・中央） */
+  .adderWrap{ display:flex; justify-content:center; width:100%; }
+  .adder{ width:48px; height:48px; border-radius:14px; border:2px dashed #cbd5e1; background:#f8fafc; color:#334155; font-size:28px; font-weight:900; line-height:1; display:grid; place-items:center; cursor:pointer; margin:4px auto 0; }
+  .adder:active{ transform:translateY(1px); }
+
+  /* 印刷 */
+  @media print{
+    .bar, .hint, .ctrls, .done, .adderWrap { display:none !important }
+    body{ background:#fff }
+    .wrap{ max-width:none; padding:0 }
+    main.wrap{ padding:0 }
+    h1{ display:block; margin:0 0 12pt; font-size:18pt; }
+    h1 span{ border:none !important; background:none !important; }
+    .grid{ grid-template-columns: repeat(2, 1fr); gap:8pt }
+    .kid{ break-inside:avoid; }
+    .item{ border:1pt solid #000; border-radius:8pt; padding:8pt; grid-template-columns:auto 1fr; }
+    .num{ background:#fff; border:1pt solid #000; width:24pt; height:24pt; border-radius:6pt; font-size:12pt }
+    .txt{ font-size:12pt; min-height:18pt }
+    @page{ size: A4; margin: 12mm }
+  }
+
+  /* 疑似フルスクリーン（環境制限の代替） */
+  body.pseudo-full{ overflow:hidden; }
+  body.pseudo-full header{ position:fixed; top:0; left:0; right:0; }
+  body.pseudo-full main.wrap{ position:fixed; top:var(--bar-h); left:0; right:0; height:calc(100dvh - var(--bar-h)); overflow:auto; }
+
+  /* トースト */
+  #toast{ position:fixed; left:50%; transform:translateX(-50%); bottom:16px; background:#111827; color:#fff; padding:10px 14px; border-radius:12px; font-weight:700; opacity:0; pointer-events:none; transition:opacity .2s ease; z-index:20; }
+  #toast.show{ opacity:1; }
+
+  /* テスト表示 */
+  #testPanel{ display:none; max-width:1200px; margin:12px auto; padding:12px; background:#fff; border:1px solid var(--line); border-radius:12px; }
+  #testPanel.show{ display:block; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>見通しボード：<span id="title" contenteditable="plaintext-only" spellcheck="false">きょうのやること</span></h1>
+      <div class="bar">
+        <button id="addKid" class="secondary">子を追加</button>
+        <button id="fullBtn" class="secondary" title="全画面／拡大">全画面</button>
+        <button id="printBtn" class="secondary">印刷</button>
+        <button id="clearBtn" class="danger">ぜんぶ消す</button>
+      </div>
+      <div class="hint">各ボードの項目は直編集OK／✔で完了。<strong>番号(□)をドラッグ</strong>で並び替え。自動保存されます。</div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div id="grid" class="grid" aria-live="polite"></div>
+  </main>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <div id="testPanel"><strong>テスト結果</strong><ul id="testList"></ul></div>
+
+<script>
+  const $ = (s, r=document)=>r.querySelector(s);
+  const $$ = (s, r=document)=>[...r.querySelectorAll(s)];
+  const STORAGE = 'multikid_board_v1';
+
+  // データ構造（クラス名・日付・全員追加は削除）
+  let state = load() || {
+    title: 'きょうのやること',
+    kids: [
+      { name:'のび太', items: [ {text:'あさのしたく',done:false}, {text:'１じかんめ さんすう',done:false} ] },
+      { name:'スネ夫', items: [ {text:'あさのしたく',done:false} ] },
+      { name:'しずか', items: [ {text:'あさのしたく',done:false} ] }
+    ]
+  };
+
+  // 保存・読込
+  function save(){ localStorage.setItem(STORAGE, JSON.stringify(state)); }
+  function load(){ try{ return JSON.parse(localStorage.getItem(STORAGE)); }catch(e){ return null; } }
+
+  // ユーティリティ
+  function toast(msg, ms=2000){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), ms); }
+  function moveInArray(arr, from, to){ if(from===to) return; const item=arr.splice(from,1)[0]; arr.splice(to,0,item); }
+
+  // 1人用ボードのDOMを生成
+  function makeKidCard(kidIndex){
+    const kid = state.kids[kidIndex];
+    const card = document.createElement('section');
+    card.className = 'kid';
+
+    // ヘッダ
+    const head = document.createElement('div');
+    head.className = 'kidHead';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'kidName';
+    nameEl.contentEditable = 'plaintext-only';
+    nameEl.spellcheck = false;
+    nameEl.textContent = kid.name;
+    nameEl.addEventListener('input', ()=>{ kid.name=nameEl.textContent.trim(); save(); });
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'ghost'; delBtn.textContent = '削除';
+    delBtn.addEventListener('click', ()=>{
+      if(confirm(`${kid.name} のボードを削除しますか？`)){
+        state.kids.splice(kidIndex,1); save(); render();
+      }
+    });
+
+    head.append(nameEl, delBtn);
+
+    // リスト
+    const ol = document.createElement('ol'); ol.className='steps';
+    kid.items.forEach((it, idx)=> ol.appendChild(makeItem(kidIndex, idx, it.text, it.done)) );
+
+    // 一番下の＋ボタン（中央配置）
+    const addWrap = document.createElement('div'); addWrap.className='adderWrap';
+    const addBtn = document.createElement('button'); addBtn.className='adder'; addBtn.setAttribute('aria-label','項目を追加'); addBtn.textContent='＋';
+    addBtn.addEventListener('click', ()=>{ addItem(kidIndex, ''); });
+    addWrap.appendChild(addBtn);
+
+    card.append(head, ol, addWrap);
+    return card;
+  }
+
+  function makeItem(kidIndex, itemIndex, text='', done=false){
+    const kid = state.kids[kidIndex];
+    const li = document.createElement('li'); li.className='item'; li.draggable=true;
+    li.innerHTML = `
+      <div class="num" aria-hidden="true">${itemIndex+1}</div>
+      <div class="txt" contenteditable="plaintext-only" spellcheck="false"></div>
+      <div class="ctrls">
+         <input type="checkbox" class="done" ${done?'checked':''} title="完了" />
+         <button class="ghost del" title="削除">✕</button>
+      </div>`;
+
+    const txtEl = li.querySelector('.txt');
+    const doneEl = li.querySelector('.done');
+
+    txtEl.textContent = text;
+    if(done){ li.style.opacity=0.55; li.style.textDecoration='line-through'; }
+
+    txtEl.addEventListener('input', ()=>{ kid.items[itemIndex].text = txtEl.innerText.trim(); save(); });
+    doneEl.addEventListener('change', e=>{ kid.items[itemIndex].done = e.target.checked; li.style.opacity = e.target.checked ? 0.55 : 1; li.style.textDecoration = e.target.checked ? 'line-through' : 'none'; save(); });
+
+    li.querySelector('.del').addEventListener('click', ()=>{ kid.items.splice(itemIndex,1); save(); render(); });
+
+    // Drag & Drop events（番号を持ってドラッグ）
+    const handle = li.querySelector('.num');
+    handle.addEventListener('mousedown', ()=>{ li.draggable=true; });
+    handle.addEventListener('touchstart', ()=>{ li.draggable=true; }, {passive:true});
+
+    li.addEventListener('dragstart', e=>{
+      e.dataTransfer.setData('text/plain', String(itemIndex));
+      e.dataTransfer.effectAllowed='move';
+      li.classList.add('dragging');
+    });
+    li.addEventListener('dragend', ()=>{ li.classList.remove('dragging'); li.draggable=false; });
+
+    li.addEventListener('dragover', e=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; });
+    li.addEventListener('drop', e=>{
+      e.preventDefault();
+      const fromIndex=parseInt(e.dataTransfer.getData('text/plain'));
+      const toIndex=itemIndex;
+      if(Number.isNaN(fromIndex) || fromIndex===toIndex) return;
+      moveInArray(kid.items, fromIndex, toIndex);
+      save(); render();
+    });
+
+    return li;
+  }
+
+  function addItem(kidIndex, text){
+    state.kids[kidIndex].items.push({text, done:false});
+    save();
+    render();
+    // 追加後にフォーカスを新規欄へ
+    const kidCard = $(`#grid .kid:nth-child(${kidIndex+1})`);
+    const lastTxt = kidCard?.querySelector('ol.steps .item:last-child .txt');
+    if(lastTxt){ lastTxt.focus(); const r=document.createRange(); r.selectNodeContents(lastTxt); r.collapse(false); const s=window.getSelection(); s.removeAllRanges(); s.addRange(r); }
+  }
+
+  function render(){
+    $('#title').textContent = state.title || 'きょうのやること';
+
+    const grid=$('#grid'); grid.innerHTML='';
+    state.kids.forEach((_,i)=> grid.appendChild(makeKidCard(i)) );
+  }
+
+  // 疑似/ネイティブ全画面
+  function isFullscreenAvailable(){ return !!(document.fullscreenEnabled && document.documentElement.requestFullscreen); }
+  async function toggleFull(){
+    const el=document.documentElement;
+    try{
+      if(document.fullscreenElement){ await document.exitFullscreen?.(); document.body.classList.remove('pseudo-full'); $('#fullBtn').textContent='全画面'; return; }
+      if(isFullscreenAvailable()){ await el.requestFullscreen(); $('#fullBtn').textContent='戻す'; return; }
+      document.body.classList.add('pseudo-full'); $('#fullBtn').textContent='戻す'; toast('全画面は制限中 → 拡大表示に切替');
+    }catch(e){ document.body.classList.add('pseudo-full'); $('#fullBtn').textContent='戻す'; toast('全画面は許可されていません → 拡大表示'); }
+  }
+
+  // イベント
+  $('#title').addEventListener('input', ()=>{ state.title=$('#title').textContent.trim(); save(); });
+  $('#addKid').addEventListener('click', ()=>{ const name=prompt('なまえ'); if(!name) return; state.kids.push({name, items:[]}); save(); render(); });
+  $('#clearBtn').addEventListener('click', ()=>{ if(confirm('ぜんぶ消します。よろしいですか？')){ state.kids.forEach(k=>k.items=[]); save(); render(); }});
+  $('#printBtn').addEventListener('click', ()=> window.print());
+  $('#fullBtn').addEventListener('click', toggleFull);
+
+  // 初期描画
+  render();
+
+  // ====== 簡易テスト（?tests=1 で表示） ======
+  function assert(name, cond){ const li=document.createElement('li'); li.textContent=`${cond?'✅':'❌'} ${name}`; $('#testList').appendChild(li); if(!cond) console.error('Test failed:', name); }
+  function runTests(){
+    $('#testPanel').classList.add('show');
+    // 1) ＋ボタンで1件追加＆末尾フォーカス
+    const before = state.kids[0].items.length; addItem(0,''); const after=state.kids[0].items.length; assert('＋で1件増える', after===before+1);
+    // 2) 並べ替えロジック
+    const arr=['a','b','c','d']; moveInArray(arr,0,2); assert('moveInArray 0→2', arr.join(',')==='b,c,a,d');
+    // 3) 削除ボタンで1件減る
+    const beforeDel = state.kids[0].items.length; const lastDelBtn = document.querySelector('#grid .kid:nth-child(1) ol.steps .item:last-child .del'); lastDelBtn?.click(); assert('削除で1件減る', state.kids[0].items.length===beforeDel-1);
+    // 4) フルスクリーン拒否でも落ちない
+    Promise.resolve(toggleFull()).then(()=>{ assert('fullscreen fallback 安全', true); }).catch(()=>{ assert('fullscreen fallback 安全', false); });
+  }
+  const sp = new URLSearchParams(location.search); if(sp.get('tests')==='1'){ runTests(); }
+</script>
+</body>
+</html>
